@@ -349,6 +349,9 @@ namespace Meta {
 #else
 		public void window_surface_changed (Meta.Window window);
 #endif
+#if HAS_MUTTER338
+		public signal void pre_paint ();
+#endif
 	}
 	[CCode (cheader_filename = "meta/meta-cursor-tracker.h", type_id = "meta_cursor_tracker_get_type ()")]
 	public class CursorTracker : GLib.Object {
@@ -743,6 +746,10 @@ namespace Meta {
 	public class RemoteAccessController : GLib.Object {
 		[CCode (has_construct_function = false)]
 		protected RemoteAccessController ();
+#if HAS_MUTTER338
+		public void inhibit_remote_access ();
+		public void uninhibit_remote_access ();
+#endif
 		public signal void new_handle (Meta.RemoteAccessHandle object);
 	}
 	[CCode (cheader_filename = "meta/meta-remote-access-controller.h", type_id = "meta_remote_access_handle_get_type ()")]
@@ -1057,8 +1064,10 @@ namespace Meta {
 		public void move_resize_frame (bool user_op, int root_x_nw, int root_y_nw, int w, int h);
 		public void move_to_monitor (int monitor);
 		public void raise ();
+#if !HAS_MUTTER338
 		public bool requested_bypass_compositor ();
 		public bool requested_dont_bypass_compositor ();
+#endif
 		public void set_compositor_private (GLib.Object priv);
 		public void set_demands_attention ();
 		public void set_icon_geometry (Meta.Rectangle? rect);
@@ -1155,10 +1164,12 @@ namespace Meta {
 		public bool is_destroyed ();
 		public void sync_visibility ();
 		public Meta.Window meta_window { get; construct; }
+#if !HAS_MUTTER338
 		[NoAccessorMethod]
 		public string shadow_class { owned get; set; }
 		[NoAccessorMethod]
 		public Meta.ShadowMode shadow_mode { get; set; }
+#endif
 #if HAS_MUTTER334
 		public signal void damaged ();
 #endif
@@ -1430,6 +1441,9 @@ namespace Meta {
 		POINTING_HAND,
 		CROSSHAIR,
 		IBEAM,
+#if HAS_MUTTER338
+		BLANK,
+#endif
 		LAST
 	}
 	[CCode (cheader_filename = "meta/util.h", cprefix = "META_DEBUG_", type_id = "meta_debug_topic_get_type ()")]
