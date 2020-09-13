@@ -39,6 +39,12 @@ public class Gala.Plugins.Tiles.Plugin : Gala.Plugin {
     private Gala.WindowManager? wm = null;
 
     Gee.HashMap<uint, Forest.Node> workspace_roots = new Gee.HashMap<uint, Forest.Node> ();
+    Gee.TreeSet<uint64?> windows_on_forest = new Gee.TreeSet<uint64?> ((a, b) => {
+        if (a > b) return 1;
+        if (a < b) return -1;
+        return 0;
+    });
+
     Gee.TreeSet<uint64?> tracked_windows = new Gee.TreeSet<uint64?> ((a, b) => {
         if (a > b) return 1;
         if (a < b) return -1;
@@ -78,11 +84,7 @@ public class Gala.Plugins.Tiles.Plugin : Gala.Plugin {
 
             List<weak Meta.Window> windows = workspace.list_windows ();
             foreach (var window in windows) {
-                
-                var window_id = window.get_id ();
-                if (!tracked_windows.contains (window_id) && handle_window(window)) {
-                    add_window_to_workspace_tree(window);
-                }
+               on_window_added (window);
             }
             
             if (workspace_roots.has_key (workspace.index ())) {
@@ -91,63 +93,68 @@ public class Gala.Plugins.Tiles.Plugin : Gala.Plugin {
             }
         }
 
-        workspace_manager.workspace_added.connect ((added_id) => {
-            stderr.printf ("Workspace added\n");
+        display.grab_op_end.connect ((disp, window, op) => {
+            switch (op) {
+                case Meta.GrabOp.MOVING:
+                stderr.printf("Handle moved window\n");
+                break;
+                case Meta.GrabOp.RESIZING_E: 
+                case Meta.GrabOp.RESIZING_N: 
+                case Meta.GrabOp.RESIZING_NE: 
+                case Meta.GrabOp.RESIZING_NW: 
+                case Meta.GrabOp.RESIZING_S: 
+                case Meta.GrabOp.RESIZING_SE: 
+                case Meta.GrabOp.RESIZING_SW: 
+                case Meta.GrabOp.RESIZING_W: 
+                stderr.printf("Handle Resizing\n");
+                break;
+            }
+        });
 
+        // Manage new workspaces
+        workspace_manager.workspace_added.connect ((added_id) => {
             var workspace = workspace_manager.get_workspaces ().nth_data(added_id);
             workspace.window_added.connect (on_window_added);
             workspace.window_removed.connect (on_window_removed);
         });
 
-        workspace_manager.workspace_removed.connect ((added_id) => {
-            stderr.printf ("Workspace removed\n");
-            var roots_reordered = new Gee.HashMap<uint, Forest.Node> ();
-
-            foreach (var root in this.workspace_roots) {
-                Forest.Node? node = root.value;
-
-                while (node != null && node.window == null) {
-                    node = node.leaf_left;
-                }
-
-                if (node != null) {
-                    var index = node.window.get_workspace().index ();
-                    roots_reordered.set (index, root.value);
-                }
-            }
-
-            this.workspace_roots.clear ();
-            this.workspace_roots = roots_reordered;
+        workspace_manager.workspace_removed.connect ((removed_id) => {
+            recalculate_roots ();
         });
 
         workspace_manager.workspaces_reordered.connect (() => {
-            stderr.printf ("Workspace reordered\n");
-            var roots_reordered = new Gee.HashMap<uint, Forest.Node> ();
-
-            foreach (var root in this.workspace_roots) {
-                Forest.Node? node = root.value;
-
-                while (node != null && node.window == null) {
-                    node = node.leaf_left;
-                }
-
-                if (node != null) {
-                    var index = node.window.get_workspace().index ();
-                    roots_reordered.set (index, root.value);
-                }
-            }
-
-            this.workspace_roots.clear ();
-            this.workspace_roots = roots_reordered;
+            recalculate_roots ();
         });
     }
 
+    private void recalculate_roots () {
+        var roots_reordered = new Gee.HashMap<uint, Forest.Node> ();
+
+        foreach (var root in this.workspace_roots) {
+            Forest.Node? node = root.value;
+
+            while (node != null && node.window == null) {
+                node = node.leaf_left;
+            }
+
+            if (node != null) {
+                var index = node.window.get_workspace().index ();
+                roots_reordered.set (index, root.value);
+            }
+        }
+
+        this.workspace_roots.clear ();
+        this.workspace_roots = roots_reordered;
+    }
+
     private void add_window_to_workspace_tree (Meta.Window window) {
-        var monitor = window.get_monitor ();
         var window_id = window.get_id ();
+        if (windows_on_forest.contains (window_id)) return;
+        
+        var monitor = window.get_monitor ();
         var workspace = window.get_workspace ();
         var display = wm.get_display ();
-
+        
         // TODO: Handle multi-monitors
         if (monitor == 0) {
             if (!workspace_roots.has_key (workspace.index ())) {
@@ -158,7 +165,7 @@ public class Gala.Plugins.Tiles.Plugin : Gala.Plugin {
                 rectangle.y = rectangle.y + 24;
 
                 var node = new Forest.Node (window, NodeOrientation.HORIZONTAL, rectangle);
-                tracked_windows.add (window_id);
+                windows_on_forest.add (window_id);
                 workspace_roots.set (workspace.index (), node);
 
                 connect_window_signals (window);
@@ -166,7 +173,7 @@ public class Gala.Plugins.Tiles.Plugin : Gala.Plugin {
                 var root = workspace_roots.get (workspace.index ());
                 root.attach_window (window);
                 
-                tracked_windows.add (window_id);
+                windows_on_forest.add (window_id);
                 connect_window_signals (window);
             }
         }
@@ -175,7 +182,7 @@ public class Gala.Plugins.Tiles.Plugin : Gala.Plugin {
     private void remove_window_from_workspace_tree (Meta.Window window) { 
         var workspace_index = window.get_workspace ().index ();
 
-        var currentRoot = workspace_roots.get (workspace_index);
+        var currentRoot = this.workspace_roots.get (workspace_index);
         if (currentRoot != null) {
             var newRoot = currentRoot.remove_window (window);
             
@@ -183,34 +190,78 @@ public class Gala.Plugins.Tiles.Plugin : Gala.Plugin {
                 newRoot.reflow ();
             }
             
-            workspace_roots.set (workspace_index, newRoot);
+            this.workspace_roots.set (workspace_index, newRoot);
         }
 
-        tracked_windows.remove(window.get_id ());
+        this.windows_on_forest.remove(window.get_id ());
     }
 
     public void on_window_added (Meta.Window window) {
         var id = window.get_id ();
 
-        if (tracked_windows.contains (id) || !handle_window(window)) return;
-        stdout.printf (@"Adding Window: \n");
-        add_window_to_workspace_tree (window);
+        if (tracked_windows.contains (id)) return;
 
+        if (handle_window(window)) {
+            add_window_to_workspace_tree (window);
+            reflow_tree_from_window(window);
+        }
+
+        window.notify.connect(window_notify);
+
+        tracked_windows.add(id);
+    } 
+
+    public void window_notify (Object object, ParamSpec pspec) {
+        var window = (Meta.Window) object;
+
+        switch (pspec.name) {
+            case "above":
+            case "fullscreen":
+            case "maximized-horizontally":
+            case "maximized-vertically":
+            case "minimized":
+            case "on-all-workspaces":
+                var window_id = window.get_id ();
+                if (this.windows_on_forest.contains (window_id) && !handle_window(window)) {
+                    remove_window_from_workspace_tree (window);
+                    reflow_tree_from_window(window);
+                }
+
+                if (!this.windows_on_forest.contains (window_id) && handle_window(window)) {
+                    add_window_to_workspace_tree (window);
+                    reflow_tree_from_window(window);
+                }
+            break;
+        }
+
+        
+    } 
+
+    public void reflow_tree_from_window (Meta.Window window) {
         var workspace = window.get_workspace ();
         if (workspace_roots.has_key (workspace.index ())) {
             var root = workspace_roots.get (workspace.index ());
             root.reflow ();
         }
-    } 
-
-    public void on_window_removed (Meta.Window window) {
-        var id = window.get_id ();
-        if (!tracked_windows.contains (id)) return;
-        
-        stdout.printf (@"Removing window: \n");
-        remove_window_from_workspace_tree (window);
     }
 
+    public void on_window_removed (Meta.Window window) {
+        stdout.printf (@"Removing window: \n");
+        var id = window.get_id ();
+
+        if (this.tracked_windows.contains(id)) {
+            this.tracked_windows.remove(id);
+            window.notify.disconnect(window_notify);
+
+            if (this.windows_on_forest.contains (id)) {
+                remove_window_from_workspace_tree (window);
+            }
+        }
+    }
+
+    /*
+        Checks window against list of contitions to see if we should track it or not on the tree
+    */
     private bool handle_window (Meta.Window window) {
         return 
             !window.skip_taskbar && 

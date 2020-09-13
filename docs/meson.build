@@ -9,6 +9,7 @@ basic_command = [
     valadoc,
     '--force',
     '--verbose',
+            '--deps',
     '--package-name','gala',
     '--package-version', '0.0.0',
     '--driver', vala.version(),
@@ -25,7 +26,7 @@ basic_command = [
     '--vapidir=' + join_paths(meson.build_root(), 'lib'),
     '--vapidir=' + join_paths(meson.source_root(), 'vapi'),
     '--doclet=html',
-    '--use-svg-images'
+    '--use-svg-images',
 ]
 
 doc_target = custom_target(
@@ -47,6 +48,7 @@ all_doc_target = custom_target(
         '--internal',
         '--pkg', 'granite',
         '--pkg', 'gnome-desktop-3.0',
+
         '--pkg', 'gmodule-2.0',
         '-o', '@OUTPUT@',
         '@INPUT@'

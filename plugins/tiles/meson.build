@@ -1,6 +1,5 @@
 gala_tiling_sources = [
     'Main.vala',
-    'WorkspaceController.vala',
     'forest/Node.vala'
 ]
 

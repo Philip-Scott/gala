@@ -21,18 +21,16 @@ const int MARGIN = 3;
 
 public class Gala.Plugins.Tiles.Forest.Node {
     public unowned Meta.Window? window = null;
-    
+    public NodeOrientation orientation = NodeOrientation.HORIZONTAL;
+
     private bool last_added_left = false;
 
     public Node? leaf_right = null;
     public Node? leaf_left = null;
 
-
     private Meta.Rectangle rectangle;
 
     private uint split = 0;
-
-    private NodeOrientation orientation = NodeOrientation.HORIZONTAL;
 
     public Node (unowned Meta.Window _window, NodeOrientation _orientation, Meta.Rectangle _rectangle) {
         window = _window;
