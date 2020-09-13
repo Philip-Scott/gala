@@ -182,6 +182,7 @@ subdir('plugins/maskcorners')
 subdir('plugins/pip')
 subdir('plugins/template')
 subdir('plugins/zoom')
+subdir('plugins/tiles')
 if get_option('documentation')
     subdir('docs')
 endif
