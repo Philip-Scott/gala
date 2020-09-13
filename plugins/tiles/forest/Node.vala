@@ -17,7 +17,7 @@ public enum NodeOrientation {
     VERTICAL
 }
 
-const int MARGIN = 3;
+const int MARGIN = 4;
 
 public class Gala.Plugins.Tiles.Forest.Node {
     public unowned Meta.Window? window = null;
@@ -48,8 +48,8 @@ public class Gala.Plugins.Tiles.Forest.Node {
         if (this.window != null) {
             var new_orientation = orientation == NodeOrientation.HORIZONTAL ? NodeOrientation.VERTICAL : NodeOrientation.HORIZONTAL;
 
-            this.leaf_left = new Node (this.window, new_orientation, get_rectangle_division (false));
-            this.leaf_right = new Node (new_window, new_orientation, get_rectangle_division (true));
+            this.leaf_left = new Node (this.window, new_orientation, get_rectangle_division (false, new_orientation));
+            this.leaf_right = new Node (new_window, new_orientation, get_rectangle_division (true, new_orientation));
 
             this.window = null;
 
@@ -62,6 +62,52 @@ public class Gala.Plugins.Tiles.Forest.Node {
             return leaf_left.attach_window (new_window);
         }
     } 
+
+     /** 
+        Attaches a window to the tree at a coordinate
+        return: the node of the attached window.
+    */
+    public Node attach_window_at (unowned Meta.Window new_window, int x, int y, NodeOrientation previous_orientation) {
+        if (this.window != null) {
+            var new_orientation = previous_orientation == NodeOrientation.HORIZONTAL ? NodeOrientation.VERTICAL : NodeOrientation.HORIZONTAL;
+            
+            var rectangle_left = get_rectangle_division (false, new_orientation);
+            var rectangle_right = get_rectangle_division (true, new_orientation);
+
+            if (point_in_rectangle(x, y, rectangle_left)) {
+                this.leaf_left = new Node (new_window, new_orientation, rectangle_left);
+                this.leaf_right = new Node (this.window, new_orientation, rectangle_right);
+
+                this.window = null;
+                return leaf_left;
+            } else {
+                this.leaf_left = new Node (this.window, new_orientation, rectangle_left);
+                this.leaf_right = new Node (new_window, new_orientation, rectangle_right);
+
+                this.window = null;
+                return leaf_right;
+            }
+        } else {
+            if (point_in_rectangle(x, y, this.leaf_left.rectangle)) {
+                return this.leaf_left.attach_window_at(new_window, x, y, this.orientation);
+            } else {
+                return this.leaf_right.attach_window_at(new_window, x, y, this.orientation);
+            }
+        }
+    }
+
+    private bool point_in_rectangle (int x, int y, Meta.Rectangle rectangle) {
+        string rectangle_string = "%dx%d : %d,%d".printf (rectangle.width, rectangle.height, rectangle.x, rectangle.y);
+
+        var condition = rectangle.x <= x <= rectangle.x + rectangle.width && rectangle.y <= y <= rectangle.y + rectangle.height;
+        if (condition) {
+            stderr.printf("%s contains %d %d\n", rectangle_string, x, y);
+        } else {
+            stderr.printf("%s not contains %d %d\n", rectangle_string, x, y);
+        }
+
+        return condition;
+    }
 
     /** 
         Attaches a window to the tree.
@@ -88,8 +134,8 @@ public class Gala.Plugins.Tiles.Forest.Node {
             } else if (this.leaf_left == null && this.leaf_right == null) {
                 return null;
             } else {
-                this.leaf_right.pass_rectangle (get_rectangle_division (true));
-                this.leaf_left.pass_rectangle (get_rectangle_division (false));
+                this.leaf_right.pass_rectangle (get_rectangle_division (true, orientation));
+                this.leaf_left.pass_rectangle (get_rectangle_division (false, orientation));
                 return this;
             }
         }
@@ -113,15 +159,15 @@ public class Gala.Plugins.Tiles.Forest.Node {
         this.rectangle = new_rectangle;
 
         if (window == null) {
-            this.leaf_right.pass_rectangle (get_rectangle_division (true));
-            this.leaf_left.pass_rectangle (get_rectangle_division (false));
+            this.leaf_right.pass_rectangle (get_rectangle_division (true, orientation));
+            this.leaf_left.pass_rectangle (get_rectangle_division (false, orientation));
         }
     }
 
-    private Meta.Rectangle get_rectangle_division (bool right_side) {
+    private Meta.Rectangle get_rectangle_division (bool right_side, NodeOrientation _orientation) {
         var new_rectangle = this.rectangle.copy();
 
-        if (orientation == NodeOrientation.HORIZONTAL) {
+        if (_orientation == NodeOrientation.HORIZONTAL) {
             new_rectangle.width = new_rectangle.width / 2;
 
             if (right_side) {
@@ -140,7 +186,7 @@ public class Gala.Plugins.Tiles.Forest.Node {
     }
 
     public string to_string () {
-        return "%dx%d %s".printf (rectangle.width, rectangle.height, window != null ? window.get_title() : "()");
+        return "%dx%d : %d,%d %s".printf (rectangle.width, rectangle.height, rectangle.x, rectangle.y, window != null ? window.get_title() : "()");
     }
 
     public void print (string depth) {

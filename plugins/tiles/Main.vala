@@ -53,6 +53,8 @@ public class Gala.Plugins.Tiles.Plugin : Gala.Plugin {
     
     bool initialized = false;
 
+    unowned Meta.Window? grabed_window = null;
+
     construct {}
 
     public override void initialize (Gala.WindowManager wm) {
@@ -93,10 +95,50 @@ public class Gala.Plugins.Tiles.Plugin : Gala.Plugin {
             }
         }
 
+        display.grab_op_begin.connect((disp, window, op) => {
+            grabed_window = window;
+        });
+
+        var cursor_tracker = display.get_cursor_tracker ();
+
         display.grab_op_end.connect ((disp, window, op) => {
+            if (!handle_window(window)) return;
+
             switch (op) {
                 case Meta.GrabOp.MOVING:
-                stderr.printf("Handle moved window\n");
+                int x, y;
+                cursor_tracker.get_pointer (out x, out y, null);
+
+                var window_id = window.get_id ();
+                if (windows_on_forest.contains (window_id)) {
+                    remove_window_from_workspace_tree(window);
+                } 
+                
+                var monitor = window.get_monitor ();
+                var workspace = window.get_workspace ();
+                
+                // TODO: Handle multi-monitors
+                if (monitor == 0) {
+                    if (!workspace_roots.has_key (workspace.index ())) {
+                        var rectangle = display.get_monitor_geometry (monitor);
+        
+                        // Wingpanel. TODO: Get rectangles from screen
+                        rectangle.height = rectangle.height - 24; 
+                        rectangle.y = rectangle.y + 24;
+        
+                        var node = new Forest.Node (window, NodeOrientation.HORIZONTAL, rectangle);
+                        windows_on_forest.add (window_id);
+                        workspace_roots.set (workspace.index (), node);
+                        reflow_tree_from_window(window);
+                    } else {
+                        var root = workspace_roots.get (workspace.index ());
+                        root.attach_window_at (window, x, y, root.orientation);
+                        
+                        windows_on_forest.add (window_id);
+                        reflow_tree_from_window(window);
+                    }
+                }
+
                 break;
                 case Meta.GrabOp.RESIZING_E: 
                 case Meta.GrabOp.RESIZING_N: 
@@ -106,9 +148,10 @@ public class Gala.Plugins.Tiles.Plugin : Gala.Plugin {
                 case Meta.GrabOp.RESIZING_SE: 
                 case Meta.GrabOp.RESIZING_SW: 
                 case Meta.GrabOp.RESIZING_W: 
-                stderr.printf("Handle Resizing\n");
                 break;
             }
+
+            grabed_window = null;
         });
 
         // Manage new workspaces
@@ -149,6 +192,8 @@ public class Gala.Plugins.Tiles.Plugin : Gala.Plugin {
 
     private void add_window_to_workspace_tree (Meta.Window window) {
         var window_id = window.get_id ();
+
+        if (grabed_window != null && grabed_window.get_id () == window_id) return;
         if (windows_on_forest.contains (window_id)) return;
         
         var monitor = window.get_monitor ();
@@ -167,19 +212,18 @@ public class Gala.Plugins.Tiles.Plugin : Gala.Plugin {
                 var node = new Forest.Node (window, NodeOrientation.HORIZONTAL, rectangle);
                 windows_on_forest.add (window_id);
                 workspace_roots.set (workspace.index (), node);
-
-                connect_window_signals (window);
             } else {
                 var root = workspace_roots.get (workspace.index ());
                 root.attach_window (window);
                 
                 windows_on_forest.add (window_id);
-                connect_window_signals (window);
             }
         }
     }
 
     private void remove_window_from_workspace_tree (Meta.Window window) { 
+        if (!windows_on_forest.contains (window.get_id ())) return;
+
         var workspace_index = window.get_workspace ().index ();
 
         var currentRoot = this.workspace_roots.get (workspace_index);
@@ -204,6 +248,7 @@ public class Gala.Plugins.Tiles.Plugin : Gala.Plugin {
         if (handle_window(window)) {
             add_window_to_workspace_tree (window);
             reflow_tree_from_window(window);
+            connect_window_signals (window);
         }
 
         window.notify.connect(window_notify);
@@ -246,7 +291,6 @@ public class Gala.Plugins.Tiles.Plugin : Gala.Plugin {
     }
 
     public void on_window_removed (Meta.Window window) {
-        stdout.printf (@"Removing window: \n");
         var id = window.get_id ();
 
         if (this.tracked_windows.contains(id)) {
@@ -269,6 +313,7 @@ public class Gala.Plugins.Tiles.Plugin : Gala.Plugin {
             window.allows_move () &&
             !window.is_fullscreen () &&
             !window.is_hidden () && 
+            !(window.is_on_all_workspaces () && window.is_on_primary_monitor ()) &&
             !window.maximized_horizontally &&
             !window.maximized_vertically &&
             !window.minimized &&
@@ -289,29 +334,14 @@ public class Gala.Plugins.Tiles.Plugin : Gala.Plugin {
         });
     } 
 
-    public void remove_window_from_forest (Meta.Window window) {
-        stdout.printf (@"Reflow all\n");
-
-        foreach (var root in workspace_roots) {
-            root.value.reflow();
-            root.value.print("");
-        }
-    }
-
-
     public void reflow_all () {
-        stdout.printf (@"Reflow all\n");
-
         foreach (var root in workspace_roots) {
             root.value.reflow();
             root.value.print("");
         }
     }
 
-    public override void destroy () {
-        unowned Meta.Display display = wm.get_display ();
-        unowned List<Meta.WindowActor> actors = display.get_window_actors ();
-    }
+    public override void destroy () {}
 }
 
 public Gala.PluginInfo register_plugin () {
@@ -320,6 +350,6 @@ public Gala.PluginInfo register_plugin () {
         author = "Felipe Escoto <felescoto95@hotmail.com>",
         plugin_type = typeof (Gala.Plugins.Tiles.Plugin),
         provides = Gala.PluginFunction.ADDITION,
-        load_priority = Gala.LoadPriority.IMMEDIATE
+        load_priority = Gala.LoadPriority.DEFERRED
     };
 }
